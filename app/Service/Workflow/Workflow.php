@@ -13,7 +13,7 @@ class Workflow implements WorkflowInterface{
 	 * [getNextAuditorIds 获得下一步审批人员工id
 	 * @return []
 	 */
-	protected function getProcessAuditorIds(Entry $entry,int $process_id){
+	protected function getProcessAuditorIds(Entry $entry,$process_id){
 		$auditor_ids=[];
 		//查看是否自动选人
 		if($flowlink=Flowlink::where('type','Sys')->where('process_id',$process_id)->first()){
@@ -24,11 +24,17 @@ class Workflow implements WorkflowInterface{
 
 			if($flowlink->auditor=='-1001'){
 				//发起人部门主管
+				if(empty($entry->emp->dept)){
+					return $auditor_ids;
+				}
 				$auditor_ids[]=$entry->emp->dept->director_id;
 			}
 
 			if($flowlink->auditor=='-1002'){
 				//发起人部门经理
+				if(empty($entry->emp->dept)){
+					return $auditor_ids;
+				}
 				$auditor_ids[]=$entry->emp->dept->manager_id;
 			}
 		}else{
@@ -97,7 +103,7 @@ class Workflow implements WorkflowInterface{
 	    //步骤流转
 	    //步骤审核人
 	    $auditors=Emp::whereIn('id',$auditor_ids)->get();
-	    if(empty($auditors)){
+	    if($auditors->count()<1){
 	        throw new \Exception("下一步骤未找到审核人", 1);
 	    }
 	    $time=time();
@@ -123,7 +129,7 @@ class Workflow implements WorkflowInterface{
 	 * @param  [type] $process_id [description]
 	 * @return [type]             [description]
 	 */
-	public function flowlink(int $process_id){
+	public function flowlink($process_id){
 	    $proc=Proc::with('entry.emp.dept')->where(['emp_id'=>Auth::id()])->where(["status"=>0])->findOrFail($process_id);
 
 	    if(Flowlink::where(['process_id'=>$proc->process_id,"type"=>"Condition"])->count()>1){
@@ -163,9 +169,13 @@ class Workflow implements WorkflowInterface{
 	        }
 
 	        $auditor_ids=$this->getProcessAuditorIds($proc->entry,$flowlink->next_process_id);
+	        if(empty($auditor_ids)){
+	        	throw new \Exception("下一步骤未找到审核人", 1);
+	        }
+
 	        $auditors=Emp::whereIn('id',$auditor_ids)->get();
 
-	        if(empty($auditors)){
+	        if($auditors->count()<1){
 	            throw new \Exception("下一步骤未找到审核人", 1);
 	        }
 
@@ -247,7 +257,7 @@ class Workflow implements WorkflowInterface{
 	                        	$this->goToProcess($proc->entry->parent_entry,$proc->entry->enter_process->child_back_process);
 	                            $proc->entry->parent_entry->process_id=$proc->entry->enter_process->child_back_process;
 	                        }else{
-	                        	//默认进入当前子流程步骤下一步
+	                        	//默认进入父流程步骤下一步
 	                        	$parent_flowlink=Flowlink::where(['process_id'=>$proc->entry->enter_process->id,"type"=>"Condition"])->first();
 
 	                        	//判断是否为最后一步
@@ -263,12 +273,12 @@ class Workflow implements WorkflowInterface{
 	                        		$this->goToProcess($proc->entry->parent_entry,$parent_flowlink->next_process_id);
 
 	                                $proc->entry->parent_entry->process_id=$parent_flowlink->next_process_id;
+	                                $proc->entry->parent_entry->status=0;
 	                        	}
 	                        }
 
 	                        $proc->entry->parent_entry->child=0;
-	                        $proc->entry->parent_entry->status=0;
-
+	                        
 	                        $proc->entry->parent_entry->save();
 	                    }
 	                    
@@ -281,7 +291,7 @@ class Workflow implements WorkflowInterface{
 	                $auditor_ids=$this->getProcessAuditorIds($proc->entry,$flowlink->next_process_id);
 	                $auditors=Emp::whereIn('id',$auditor_ids)->get();
 
-	                if(empty($auditors)){
+	                if($auditors->count()<1){
 	                    throw new \Exception("下一步骤未找到审核人", 1);
 	                }
 	                foreach($auditors as $v){
@@ -329,12 +339,12 @@ class Workflow implements WorkflowInterface{
 	 * @param  [type] $process_id [description]
 	 * @return [type]             [description]
 	 */
-	protected function goToProcess(Entry $entry,int $process_id){
+	protected function goToProcess(Entry $entry,$process_id){
 	    $auditor_ids=$this->getProcessAuditorIds($entry,$process_id);
 
 	    $auditors=Emp::whereIn('id',$auditor_ids)->get();
 
-	    if(empty($auditors)){
+	    if($auditors->count()<1){
 	        throw new \Exception("下一步骤未找到审核人", 1);
 	    }
 	    $time=time();
